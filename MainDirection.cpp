@@ -4,13 +4,7 @@
 
 #include "MainDirection.h"
 
-static inline long qround(long x, long y)
-{
-	ldiv_t qr = ldiv(x, y);
-	return qr.quot + (2 * qr.rem >= y);
-}
-
-void calcAverage(const DataVec* dv, long avg[3])
+void calcAverage(const DataVec* dv, fixed avg[3])
 {
 	const int (*p)[3];
 	avg[0] = avg[1] = avg[2] = 0;
@@ -19,26 +13,26 @@ void calcAverage(const DataVec* dv, long avg[3])
 		avg[1] += (*p)[1];
 		avg[2] += (*p)[2];
 	}
-	avg[0] = qround(avg[0], dv->len);
-	avg[1] = qround(avg[1], dv->len);
-	avg[2] = qround(avg[2], dv->len);
+	avg[0] = fixdiv(avg[0], dv->len); // == fixdiv(fixed(avg[0]), fixed(dv->len))
+	avg[1] = fixdiv(avg[1], dv->len);
+	avg[2] = fixdiv(avg[2], dv->len);
 }
 
-void calcCovariance(const DataVec* dv, const long avg[3], long cov[3][3])
+void calcCovariance(const DataVec* dv, const fixed avg[3], fixed cov[3][3])
 {
 	const int (*p)[3];
 	long len = dv->len;
-	long x, y, z;
-	long xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+	fixed x, y, z;
+	fixed xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
 	for (p = dv->data; p < dv->data + len; ++p) {
-		x = (*p)[0] - avg[0];
-		y = (*p)[1] - avg[1];
-		z = (*p)[2] - avg[2];
-		xx += x * x; xy += x * y; xz += x * z;
-				     yy += y * y; yz += y * z;
-		                          zz += z * z;
+		x = int2fixed((*p)[0]) - avg[0];
+		y = int2fixed((*p)[1]) - avg[1];
+		z = int2fixed((*p)[2]) - avg[2];
+		xx += fixmul(x, x); xy += fixmul(x, y); xz += fixmul(x, z);
+		                    yy += fixmul(y, y); yz += fixmul(y, z);
+		                                        zz += fixmul(z, z);
 	}
-	cov[0][0] = xx / len;
+	cov[0][0] = xx / len;	// fixed / long -> fixed
 	cov[0][1] = cov[1][0] = xy / len;
 	cov[0][2] = cov[2][0] = xz / len;
 	cov[1][1] = yy / len;
@@ -52,47 +46,48 @@ void calcStatistics(const DataVec* dv, StVals* st)
 	calcCovariance(dv, st->avg, st->cov);
 }
 
-#define EPS 0.001f
 #define sign(x) ((x < 0) ? -1 : 1)
-#define SIZE_MAT (9 * sizeof(float))
+#define SIZE_MAT (9 * sizeof(fixed))
 
-void eyes(float M[3][3])
+void eyes(fixed M[3][3])
 {
 	memset(M, 0, SIZE_MAT);
-	M[0][0] = M[1][1] = M[2][2] = 1;
+	M[0][0] = M[1][1] = M[2][2] = int2fixed(1);
 }
 
-float offsum(float M[3][3])
+fixed offsum(fixed M[3][3])
 {
-	return fabsf(M[0][1]) + fabsf(M[0][2]) + fabsf(M[1][2]);
+	return fixabs(M[0][1]) + fixabs(M[0][2]) + fixabs(M[1][2]);
 }
 
 // M = M1 * M2, safe if M == M1 or M == M2
-void matMul(float M[3][3], float M1[3][3], float M2[3][3])
+void matMul(fixed M[3][3], fixed M1[3][3], fixed M2[3][3])
 {
-	float O[3][3];
+	fixed O[3][3];
 	int i, j;
 	for (i = 0; i < 3; i++) {
 		for (j = 0; j < 3; j++) {
-			O[i][j] = M1[i][0] * M2[0][j] + M1[i][1] * M2[1][j] + M1[i][2] * M2[2][j];
+			O[i][j] = fixmul(M1[i][0], M2[0][j]) + fixmul(M1[i][1], M2[1][j]) + fixmul(M1[i][2], M2[2][j]);
 		}
 	}
 	memcpy(M, O, SIZE_MAT);
 }
 
-int givensRotation(float M[3][3], float J[3][3], float R[3][3], int i, int j)
+#define EPS (int2fixed(1) / 10)	// 0.1
+int givensRotation(fixed M[3][3], fixed J[3][3], fixed R[3][3], int i, int j)
 {
-	float tao, t, c, s;
+	fixed tao, t, c, s;
 	// check
 	eyes(R);
-	if (fabsf(M[i][j]) < EPS) return 0;
+	if (fixabs(M[i][j]) < EPS) return 0;
 	if (i > j) { int t = i; i = j; j = t; }	// assert i < j
 
 	// calculate cos/sin
-	tao = (M[i][i] - M[j][j]) / (2 * M[i][j]);
-	t = sign(tao) / (fabsf(tao) + sqrtf(1 + tao*tao));	// tan
-	c = 1 / sqrtf(1 + t*t);	// cos
-	 s = c * t;				// sin
+	tao = fixdiv(M[i][i] - M[j][j], 2 * M[i][j]);
+	t = fixdiv(sign(tao) * int2fixed(1), fixabs(tao) + fixsqrt(int2fixed(1) + fixmul(tao, tao)));	// tan
+	c = fixdiv(int2fixed(1), fixsqrt(int2fixed(1) + fixmul(t, t)));	// cos
+	s = fixmul(c, t);				// sin
+	if (s == 0) return 0;
 
 	// rotate matrix
 	R[i][i] = c; R[i][j] = -s;
@@ -101,14 +96,13 @@ int givensRotation(float M[3][3], float J[3][3], float R[3][3], int i, int j)
 	R[i][j] = s; R[j][i] = -s;
 	matMul(M, R, M);	// M = R * M	
 	matMul(J, R, J);	// J = R * J
-
 	return 1;
 }
 
 // sort by eigen value(e) (ascending)
-void _swap_eigens(float e[3], float v[3][3], int i, int j) {
-	float temp;
-	float buff[3];
+void _swap_eigens(fixed e[3], fixed v[3][3], int i, int j) {
+	fixed temp;
+	fixed buff[3];
 	temp = e[i];
 	e[i] = e[j];
 	e[j] = temp;
@@ -117,7 +111,7 @@ void _swap_eigens(float e[3], float v[3][3], int i, int j) {
 	memcpy(v[j], buff, sizeof(buff));
 }
 
-void sortEigens(float e[3], float v[3][3])
+void sortEigens(fixed e[3], fixed v[3][3])
 {
 	int s = 0;	// swap times (even or odd)
 	int i = 0;	// idx of min(e)
@@ -129,11 +123,11 @@ void sortEigens(float e[3], float v[3][3])
 }
 
 // calculate eigen value and eigen vector
-void eigenSystem(long mat_[3][3], float e[3], float v[3][3])
+void eigenSystem(fixed mat_[3][3], fixed e[3], fixed v[3][3])
 {
 	int i, j;
-	float mat[3][3];
-	float rot[3][3];
+	fixed mat[3][3];
+	fixed rot[3][3];
 	// init
 	for (i = 0; i < 3; i++) {
 		for (j = 0; j < 3; j++) {
@@ -143,9 +137,11 @@ void eigenSystem(long mat_[3][3], float e[3], float v[3][3])
 	eyes(v);
 	// loop
 	while (offsum(mat) > 5 * EPS) {
-		givensRotation(mat, v, rot, 0, 1);
-		givensRotation(mat, v, rot, 0, 2);
-		givensRotation(mat, v, rot, 1, 2);
+		int c = 0;
+		c |= givensRotation(mat, v, rot, 0, 1);
+		c |= givensRotation(mat, v, rot, 0, 2);
+		c |= givensRotation(mat, v, rot, 1, 2);
+		if (!c) break;
 	}
 	// get result
 	for (i = 0; i < 3; i++) {

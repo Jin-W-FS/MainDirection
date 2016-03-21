@@ -83,7 +83,9 @@
     <ClCompile Include="MainDirection.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="fixedpoint.h" />
     <ClInclude Include="MainDirection.h" />
+    <ClInclude Include="timeit.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

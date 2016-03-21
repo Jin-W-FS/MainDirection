@@ -26,5 +26,11 @@
     <ClInclude Include="MainDirection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="timeit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="fixedpoint.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
