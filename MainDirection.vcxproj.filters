@@ -32,5 +32,8 @@
     <ClInclude Include="fixedpoint.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="realnum.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

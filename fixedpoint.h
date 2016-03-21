@@ -9,7 +9,7 @@
 
 typedef BASETYPE fixed;
 
-#define int2fixed(x) ((x) << FIXEDLEN)
+#define int2fixed(x) ((BASETYPE)(x) << FIXEDLEN)
 #define fixed2int(x) ((x) >> FIXEDLEN)			// get integer part
 #define fixdecimal(x) ((x) & ((1<<FIXEDLEN)-1))	// get decimal part
 
