@@ -6,21 +6,14 @@
 #include "MainDirection.h"
 #include "timeit.h"
 
-#define DATA_RATIO 1
-
 void loadLog(char* path, DataVec* dv)
 {
-	const int K = 1;
-	int x, y, z;
 	int (*p)[3];
 	char line[128];
 	FILE* file = fopen(path, "r");
 	for (p = dv->data, dv->len = 0; p < dv->data + DATA_MAXLEN; ++p, ++(dv->len)) {
 		if (!fgets(line, sizeof(line), file)) break;
-		if (sscanf(line, "%*f %d %d %d", &x, &y, &z) != 3) break;
-		(*p)[0] = x * DATA_RATIO;
-		(*p)[1] = y * DATA_RATIO;
-		(*p)[2] = z * DATA_RATIO;
+		if (sscanf(line, "%*f %d %d %d", &(*p)[0], &(*p)[1], &(*p)[2]) != 3) break;
 	}
 	fclose(file);
 }
@@ -34,10 +27,12 @@ char* filename(char* path)
 	return p + 1;
 }
 
+#define st2float(x) ((float)(x)/(float)(1<<STVAL_SHIFT))
 void show(char* path)
 {
 	DataVec dv;
 	StVals st;
+	fixed fixCov[3][3];
 	fixed eigenVal[3];
 	fixed eigenVec[3][3];
 
@@ -46,17 +41,17 @@ void show(char* path)
 
 	// statistic
 	calcStatistics(&dv, &st);
-	printf("Avg:" "\t{ %.3f, %.3f, %.3f }\n", 
-		fixed2float(st.avg[0]), fixed2float(st.avg[1]), fixed2float(st.avg[2]));
-	printf("Cov:" "\t{{ %.3f, %.3f, %.3f },\n"
-		          "\t { %.3f, %.3f, %.3f },\n"
-				  "\t { %.3f, %.3f, %.3f }}\n", 
-				  fixed2float(st.cov[0][0]), fixed2float(st.cov[0][1]), fixed2float(st.cov[0][2]),
-				  fixed2float(st.cov[1][0]), fixed2float(st.cov[1][1]), fixed2float(st.cov[1][2]),
-				  fixed2float(st.cov[2][0]), fixed2float(st.cov[2][1]), fixed2float(st.cov[2][2]));
+	printf("Avg:" "\t{ %.1f, %.1f, %.1f }\n",
+				  st2float(st.avg[0]), st2float(st.avg[1]), st2float(st.avg[2]));
+	printf("Cov:" "\t{{ %.1f, %.1f, %.1f },\n"
+		          "\t { %.1f, %.1f, %.1f },\n"
+				  "\t { %.1f, %.1f, %.1f }}\n", 
+				  st2float(st.cov[0][0]), st2float(st.cov[0][1]), st2float(st.cov[0][2]),
+				  st2float(st.cov[1][0]), st2float(st.cov[1][1]), st2float(st.cov[1][2]),
+				  st2float(st.cov[2][0]), st2float(st.cov[2][1]), st2float(st.cov[2][2]));
 
-	 
-	eigenSystem(st.cov, eigenVal, eigenVec);
+	stcov2fixed(&st, fixCov);
+	eigenSystem(fixCov, eigenVal, eigenVec);
 	printf("lambda:" "\t{ %.3f, %.3f, %.3f }\n",
 		fixed2float(eigenVal[0]), fixed2float(eigenVal[1]), fixed2float(eigenVal[2]));
 	printf("vector:" "\t{{ %.3f, %.3f, %.3f },\n"
@@ -75,11 +70,11 @@ void show(char* path)
 			"set arrow from %.3f,%.3f,%.3f rto %.3f,%.3f,%.3f lc rgb 'green'\n"
 			"set arrow from %.3f,%.3f,%.3f rto %.3f,%.3f,%.3f lc rgb 'blue'\n"
 			"splot '%s' u 2:3:4 w d lc rgb 'black'",
-			fixed2float(st.avg[0]), fixed2float(st.avg[1]), fixed2float(st.avg[2]),
+			st2float(st.avg[0]), st2float(st.avg[1]), st2float(st.avg[2]),
 			fixed2float(eigenVec[0][0]) * 128, fixed2float(eigenVec[0][1]) * 128, fixed2float(eigenVec[0][2]) * 128,
-			fixed2float(st.avg[0]), fixed2float(st.avg[1]), fixed2float(st.avg[2]),
+			st2float(st.avg[0]), st2float(st.avg[1]), st2float(st.avg[2]),
 			fixed2float(eigenVec[1][0]) * 128, fixed2float(eigenVec[1][1]) * 128, fixed2float(eigenVec[1][2]) * 128,
-			fixed2float(st.avg[0]), fixed2float(st.avg[1]), fixed2float(st.avg[2]),
+			st2float(st.avg[0]), st2float(st.avg[1]), st2float(st.avg[2]),
 			fixed2float(eigenVec[2][0]) * 128, fixed2float(eigenVec[2][1]) * 128, fixed2float(eigenVec[2][2]) * 128,
 			filename(path));
 	fclose(file);

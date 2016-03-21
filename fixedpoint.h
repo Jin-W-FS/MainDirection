@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define BASETYPE int32_t
-#define FIXEDLEN 10		// length of decimal bits
+#define FIXEDLEN 9		// length of decimal bits
 
 typedef BASETYPE fixed;
 

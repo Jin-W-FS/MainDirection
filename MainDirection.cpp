@@ -4,7 +4,10 @@
 
 #include "MainDirection.h"
 
-void calcAverage(const DataVec* dv, fixed avg[3])
+/// sum up statistics
+#define lsftst(x)	((x) << STVAL_SHIFT)
+#define rsftst(x)	((x) >> STVAL_SHIFT)
+void calcAverage(const DataVec* dv, long avg[3])
 {
 	const int (*p)[3];
 	avg[0] = avg[1] = avg[2] = 0;
@@ -13,26 +16,26 @@ void calcAverage(const DataVec* dv, fixed avg[3])
 		avg[1] += (*p)[1];
 		avg[2] += (*p)[2];
 	}
-	avg[0] = fixdiv(avg[0], dv->len); // == fixdiv(fixed(avg[0]), fixed(dv->len))
-	avg[1] = fixdiv(avg[1], dv->len);
-	avg[2] = fixdiv(avg[2], dv->len);
+	avg[0] = lsftst(avg[0]) / dv->len;
+	avg[1] = lsftst(avg[1]) / dv->len;
+	avg[2] = lsftst(avg[2]) / dv->len;
 }
 
-void calcCovariance(const DataVec* dv, const fixed avg[3], fixed cov[3][3])
+void calcCovariance(const DataVec* dv, const long avg[3], long cov[3][3])
 {
 	const int (*p)[3];
 	long len = dv->len;
-	fixed x, y, z;
-	fixed xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+	long x, y, z;
+	long xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
 	for (p = dv->data; p < dv->data + len; ++p) {
-		x = int2fixed((*p)[0]) - avg[0];
-		y = int2fixed((*p)[1]) - avg[1];
-		z = int2fixed((*p)[2]) - avg[2];
-		xx += fixmul(x, x); xy += fixmul(x, y); xz += fixmul(x, z);
-		                    yy += fixmul(y, y); yz += fixmul(y, z);
-		                                        zz += fixmul(z, z);
+		x = lsftst((*p)[0]) - avg[0];
+		y = lsftst((*p)[1]) - avg[1];
+		z = lsftst((*p)[2]) - avg[2];
+		xx += rsftst(x * x); xy += rsftst(x * y); xz += rsftst(x * z);
+							 yy += rsftst(y * y); yz += rsftst(y * z);
+												  zz += rsftst(z * z);
 	}
-	cov[0][0] = xx / len;	// fixed / long -> fixed
+	cov[0][0] = xx / len;
 	cov[0][1] = cov[1][0] = xy / len;
 	cov[0][2] = cov[2][0] = xz / len;
 	cov[1][1] = yy / len;
@@ -46,6 +49,22 @@ void calcStatistics(const DataVec* dv, StVals* st)
 	calcCovariance(dv, st->avg, st->cov);
 }
 
+/// covert
+void stcov2fixed(const StVals* st, fixed mat[3][3])
+{
+	int i;
+	const long* p;
+	fixed* q;
+	for (i = 0, p = st->cov[0], q = mat[0]; i < 9; i++, p++, q++) {
+#if FIXEDLEN >= STVAL_SHIFT
+		(*q) = (*p) << (FIXEDLEN - STVAL_SHIFT);
+#else
+		(*q) = (*p) >> (STVAL_SHIFT - FIXEDLEN);
+#endif
+	}
+}
+
+/// fixedpoint math
 #define sign(x) ((x < 0) ? -1 : 1)
 #define SIZE_MAT (9 * sizeof(fixed))
 
@@ -55,9 +74,13 @@ void eyes(fixed M[3][3])
 	M[0][0] = M[1][1] = M[2][2] = int2fixed(1);
 }
 
-fixed offsum(fixed M[3][3])
+fixed offmax(fixed M[3][3], int* idx)
 {
-	return fixabs(M[0][1]) + fixabs(M[0][2]) + fixabs(M[1][2]);
+	fixed v[3] = { fixabs(M[0][1]), fixabs(M[1][2]), fixabs(M[2][0]) };
+	*idx = 0;
+	if (v[1] > v[*idx]) *idx = 1;
+	if (v[2] > v[*idx]) *idx = 2;
+	return v[*idx];
 }
 
 // M = M1 * M2, safe if M == M1 or M == M2
@@ -73,9 +96,16 @@ void matMul(fixed M[3][3], fixed M1[3][3], fixed M2[3][3])
 	memcpy(M, O, SIZE_MAT);
 }
 
+#include <stdio.h>
 #define EPS (int2fixed(1) / 10)	// 0.1
 int givensRotation(fixed M[3][3], fixed J[3][3], fixed R[3][3], int i, int j)
 {
+	//printf("M:" "\t{{ %.3f, %.3f, %.3f },\n"
+	//		"\t { %.3f, %.3f, %.3f },\n"
+	//		"\t { %.3f, %.3f, %.3f }}\n\n", 
+	//		fixed2float(M[0][0]), fixed2float(M[0][1]), fixed2float(M[0][2]),
+	//		fixed2float(M[1][0]), fixed2float(M[1][1]), fixed2float(M[1][2]),
+	//		fixed2float(M[2][0]), fixed2float(M[2][1]), fixed2float(M[2][2]));
 	fixed tao, t, c, s;
 	// check
 	eyes(R);
@@ -83,7 +113,7 @@ int givensRotation(fixed M[3][3], fixed J[3][3], fixed R[3][3], int i, int j)
 	if (i > j) { int t = i; i = j; j = t; }	// assert i < j
 
 	// calculate cos/sin
-	tao = fixdiv(M[i][i] - M[j][j], 2 * M[i][j]);
+	tao = fixdiv((M[i][i] - M[j][j]) / 2, M[i][j]);
 	t = fixdiv(sign(tao) * int2fixed(1), fixabs(tao) + fixsqrt(int2fixed(1) + fixmul(tao, tao)));	// tan
 	c = fixdiv(int2fixed(1), fixsqrt(int2fixed(1) + fixmul(t, t)));	// cos
 	s = fixmul(c, t);				// sin
@@ -123,25 +153,16 @@ void sortEigens(fixed e[3], fixed v[3][3])
 }
 
 // calculate eigen value and eigen vector
-void eigenSystem(fixed mat_[3][3], fixed e[3], fixed v[3][3])
+void eigenSystem(fixed mat[3][3], fixed e[3], fixed v[3][3])
 {
-	int i, j;
-	fixed mat[3][3];
+	int i;
 	fixed rot[3][3];
 	// init
-	for (i = 0; i < 3; i++) {
-		for (j = 0; j < 3; j++) {
-			mat[i][j] = mat_[i][j];
-		}
-	}
 	eyes(v);
 	// loop
-	while (offsum(mat) > 5 * EPS) {
-		int c = 0;
-		c |= givensRotation(mat, v, rot, 0, 1);
-		c |= givensRotation(mat, v, rot, 0, 2);
-		c |= givensRotation(mat, v, rot, 1, 2);
-		if (!c) break;
+	int idx;
+	while (offmax(mat, &idx) > EPS) {
+		if (!givensRotation(mat, v, rot, idx, (idx+1)%3)) break;
 	}
 	// get result
 	for (i = 0; i < 3; i++) {
